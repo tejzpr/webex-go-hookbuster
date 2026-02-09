@@ -11,8 +11,6 @@ import (
 
 	webex "github.com/tejzpr/webex-go-sdk/v2"
 	"github.com/tejzpr/webex-go-sdk/v2/conversation"
-	"github.com/tejzpr/webex-go-sdk/v2/device"
-	"github.com/tejzpr/webex-go-sdk/v2/mercury"
 	"github.com/tejzpr/webex-go-sdk/v2/people"
 
 	"github.com/tejzpr/webex-go-hookbuster/internal/config"
@@ -36,13 +34,10 @@ func VerifyAccessToken(accessToken string) (*people.Person, error) {
 	return person, nil
 }
 
-// Listener manages the Mercury WebSocket connection and event forwarding,
-// using the SDK's device, mercury, and conversation clients.
+// Listener manages the Conversation WebSocket connection and event forwarding.
 type Listener struct {
 	specs              *config.Specs
 	client             *webex.WebexClient
-	deviceClient       *device.Client
-	mercuryClient      *mercury.Client
 	conversationClient *conversation.Client
 	mu                 sync.Mutex
 	running            bool
@@ -66,7 +61,7 @@ func NewListener(specs *config.Specs) (*Listener, error) {
 }
 
 // Start registers the given resource/event for forwarding, and connects
-// Mercury if not already connected.
+// the conversation client if not already connected.
 func (l *Listener) Start(resource *config.Resource, event string) error {
 	l.mu.Lock()
 	l.subscriptions[resource.Description] = event
@@ -103,38 +98,23 @@ func (l *Listener) Start(resource *config.Resource, event string) error {
 	return nil
 }
 
-// connect sets up the SDK internals (device, mercury, conversation) and
-// connects to the Mercury WebSocket, following the pattern from the SDK's
-// conversation-listen-internal example.
+// connect uses the SDK's Conversation() convenience method which handles
+// device registration, Mercury WebSocket wiring, and encryption setup
+// in a single call.
 func (l *Listener) connect() error {
-	// 1. Device registration (provides the WebSocket URL)
-	l.deviceClient = device.New(l.client.Core(), nil)
-	fmt.Println(display.Info("Registering device..."))
-	if err := l.deviceClient.Register(); err != nil {
-		return fmt.Errorf("failed to register device: %w", err)
+	// client.Conversation() replaces ~25 lines of manual device/mercury/encryption setup
+	conv, err := l.client.Conversation()
+	if err != nil {
+		return fmt.Errorf("failed to initialize conversation client: %w", err)
 	}
-	fmt.Println(display.Info("Device registered!"))
+	l.conversationClient = conv
 
-	deviceInfo := l.deviceClient.GetDevice()
-	deviceURL, _ := l.deviceClient.GetDeviceURL()
-
-	// 2. Mercury client (WebSocket transport)
-	l.mercuryClient = mercury.New(l.client.Core(), nil)
-	l.mercuryClient.SetDeviceProvider(l.deviceClient)
-
-	// 3. Conversation client (parses activities, handles decryption)
-	l.conversationClient = conversation.New(l.client.Core(), nil)
-	l.conversationClient.SetMercuryClient(l.mercuryClient)
-	l.conversationClient.SetEncryptionDeviceInfo(deviceURL, deviceInfo.UserID)
-
-	// 4. Register verb-based handlers that map to hookbuster resources.
-	//    The conversation client dispatches conversation.activity events by
-	//    verb, so each handler below corresponds to one activity verb.
+	// Register verb-based handlers
 	l.registerVerbHandlers()
 
-	// 5. Connect Mercury
+	// Connect the WebSocket
 	fmt.Println(display.Info("Connecting to WebSocket..."))
-	if err := l.mercuryClient.Connect(); err != nil {
+	if err := conv.Connect(); err != nil {
 		return fmt.Errorf("failed to connect to Mercury: %w", err)
 	}
 
@@ -268,8 +248,8 @@ func (l *Listener) Stop() error {
 		))
 	}
 
-	if l.mercuryClient != nil {
-		return l.mercuryClient.Disconnect()
+	if l.conversationClient != nil {
+		return l.conversationClient.Disconnect()
 	}
 	return nil
 }
