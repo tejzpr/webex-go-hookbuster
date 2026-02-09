@@ -4,6 +4,13 @@
 
 package config
 
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
 // Resource describes a Webex resource that can emit events.
 type Resource struct {
 	Alias       string   // Short alias for CLI selection (e.g. "r", "m")
@@ -59,6 +66,73 @@ var Resources = map[string]*Resource{
 		Description: "attachmentActions",
 		Events:      []string{"created"},
 	},
+}
+
+// ── Multi-pipeline configuration types ──────────────────────────────────
+
+// Target represents a single webhook forwarding destination.
+type Target struct {
+	URL string `yaml:"url" json:"url"`
+}
+
+// Pipeline represents a single token-to-targets mapping.
+type Pipeline struct {
+	Name      string   `yaml:"name"      json:"name"`
+	TokenEnv  string   `yaml:"token_env" json:"token_env"`
+	Resources []string `yaml:"resources" json:"resources"`
+	Events    string   `yaml:"events"    json:"events"`
+	Targets   []Target `yaml:"targets"   json:"targets"`
+}
+
+// HookbusterConfig is the top-level YAML configuration for multi-pipeline mode.
+type HookbusterConfig struct {
+	Pipelines []Pipeline `yaml:"pipelines" json:"pipelines"`
+}
+
+// LoadConfig reads and validates a YAML configuration file.
+func LoadConfig(path string) (*HookbusterConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var cfg HookbusterConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	if len(cfg.Pipelines) == 0 {
+		return nil, fmt.Errorf("config must contain at least one pipeline")
+	}
+
+	for i, p := range cfg.Pipelines {
+		if err := validatePipeline(i, p); err != nil {
+			return nil, err
+		}
+	}
+
+	return &cfg, nil
+}
+
+// validatePipeline checks a single pipeline for required fields and valid values.
+func validatePipeline(index int, p Pipeline) error {
+	if p.TokenEnv == "" {
+		return fmt.Errorf("pipeline %d (%q): token_env is required", index, p.Name)
+	}
+	if len(p.Targets) == 0 {
+		return fmt.Errorf("pipeline %d (%q): at least one target is required", index, p.Name)
+	}
+	for _, t := range p.Targets {
+		if t.URL == "" {
+			return fmt.Errorf("pipeline %d (%q): target url must not be empty", index, p.Name)
+		}
+	}
+	for _, r := range p.Resources {
+		if _, ok := Resources[r]; !ok {
+			return fmt.Errorf("pipeline %d (%q): unknown resource %q", index, p.Name, r)
+		}
+	}
+	return nil
 }
 
 // VerbToResourceEvent maps Mercury activity verbs (and object types where

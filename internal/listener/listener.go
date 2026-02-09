@@ -18,12 +18,14 @@ import (
 	"github.com/tejzpr/webex-go-hookbuster/internal/forwarder"
 )
 
+const errCreateClient = "failed to create Webex client: %w"
+
 // VerifyAccessToken validates the given access token by calling the
 // Webex People API for the authenticated user ("me").
 func VerifyAccessToken(accessToken string) (*people.Person, error) {
 	client, err := webex.NewClient(accessToken, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Webex client: %w", err)
+		return nil, fmt.Errorf(errCreateClient, err)
 	}
 
 	person, err := client.People().Get("me")
@@ -36,6 +38,7 @@ func VerifyAccessToken(accessToken string) (*people.Person, error) {
 
 // Listener manages the Conversation WebSocket connection and event forwarding.
 type Listener struct {
+	name               string // pipeline name (for logging)
 	specs              *config.Specs
 	client             *webex.WebexClient
 	conversationClient *conversation.Client
@@ -44,18 +47,38 @@ type Listener struct {
 
 	// subscriptions tracks which resource/event pairs are active.
 	subscriptions map[string]string // resource name -> event filter ("all" or specific)
+
+	// targets holds multiple forwarding destinations for multi-pipeline mode.
+	// When empty, the legacy Forward(target, port) path is used.
+	targets []config.Target
 }
 
-// NewListener creates a new Listener from the given specs.
+// NewListener creates a new Listener from the given specs (legacy single-pipeline mode).
 func NewListener(specs *config.Specs) (*Listener, error) {
 	client, err := webex.NewClient(specs.AccessToken, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Webex client: %w", err)
+		return nil, fmt.Errorf(errCreateClient, err)
 	}
 
 	return &Listener{
 		specs:         specs,
 		client:        client,
+		subscriptions: make(map[string]string),
+	}, nil
+}
+
+// NewPipelineListener creates a Listener for multi-pipeline mode with named
+// pipeline and multiple forwarding targets.
+func NewPipelineListener(name, accessToken string, targets []config.Target) (*Listener, error) {
+	client, err := webex.NewClient(accessToken, nil)
+	if err != nil {
+		return nil, fmt.Errorf(errCreateClient, err)
+	}
+
+	return &Listener{
+		name:          name,
+		client:        client,
+		targets:       targets,
 		subscriptions: make(map[string]string),
 	}, nil
 }
@@ -177,13 +200,26 @@ func (l *Listener) handleActivity(activity *conversation.Activity, verb, resourc
 	}
 
 	// Forward asynchronously so we don't block the Mercury read loop
-	target := l.specs.Target
-	port := l.specs.Port
-	go func() {
-		if err := forwarder.Forward(target, port, webhookEvent); err != nil {
-			fmt.Println(display.Error(fmt.Sprintf("forward error: %s", err.Error())))
+	if len(l.targets) > 0 {
+		// Multi-pipeline mode: fan-out to all targets
+		for _, t := range l.targets {
+			tgt := t
+			go func() {
+				if err := forwarder.ForwardToURL(tgt.URL, webhookEvent); err != nil {
+					fmt.Println(display.Error(fmt.Sprintf("[%s] forward error: %s", l.name, err.Error())))
+				}
+			}()
 		}
-	}()
+	} else {
+		// Legacy single-pipeline mode
+		target := l.specs.Target
+		port := l.specs.Port
+		go func() {
+			if err := forwarder.Forward(target, port, webhookEvent); err != nil {
+				fmt.Println(display.Error(fmt.Sprintf("forward error: %s", err.Error())))
+			}
+		}()
+	}
 }
 
 // buildEventData constructs a clean map from a conversation Activity.
@@ -242,9 +278,13 @@ func (l *Listener) Stop() error {
 	l.running = false
 
 	// Log each resource being stopped
+	prefix := ""
+	if l.name != "" {
+		prefix = fmt.Sprintf("[%s] ", l.name)
+	}
 	for resName, eventFilter := range l.subscriptions {
 		fmt.Println(display.Info(
-			fmt.Sprintf("stopping listener for %s:%s", resName, eventFilter),
+			fmt.Sprintf("%sstopping listener for %s:%s", prefix, resName, eventFilter),
 		))
 	}
 

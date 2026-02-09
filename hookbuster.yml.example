@@ -1,0 +1,42 @@
+# Hookbuster Multi-Pipeline Configuration
+#
+# Usage:
+#   ./hookbuster -c hookbuster.yml
+#   # or
+#   HOOKBUSTER_CONFIG=hookbuster.yml ./hookbuster
+#
+# Tokens are referenced by environment variable name (never stored in this file).
+# Set the env vars before running hookbuster:
+#   export WEBEX_TOKEN_BOT="your-bot-token-here"
+#   export WEBEX_TOKEN_MAIN="your-main-token-here"
+
+pipelines:
+  # ── Multi-token example ───────────────────────────────────────────────
+  # Each pipeline connects with a different Webex token.
+
+  - name: "bot-account"
+    token_env: "WEBEX_TOKEN_BOT"       # env var holding the Webex access token
+    resources: ["messages", "rooms"]    # subscribe to these resources
+    events: "all"                       # "all" events for each resource
+    targets:
+      - url: "http://localhost:8080"    # forward events here
+
+  # ── Fan-out example ───────────────────────────────────────────────────
+  # A single token forwarding to multiple webhook targets simultaneously.
+
+  - name: "main-account"
+    token_env: "WEBEX_TOKEN_MAIN"
+    resources: ["messages", "rooms", "memberships", "attachmentActions"]
+    events: "all"
+    targets:                            # fan-out to multiple targets
+      - url: "http://localhost:3000"
+      - url: "http://localhost:4000"
+
+  # ── Firehose shorthand ────────────────────────────────────────────────
+  # Omit "resources" to subscribe to all resources (firehose mode).
+
+  # - name: "firehose"
+  #   token_env: "WEBEX_TOKEN_FIREHOSE"
+  #   events: "all"
+  #   targets:
+  #     - url: "http://localhost:9090"

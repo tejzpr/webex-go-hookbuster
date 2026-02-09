@@ -15,16 +15,22 @@ import (
 )
 
 // Forward sends a webhook event as an HTTP POST request to the target.
+// This is the legacy single-pipeline path (host + port).
 func Forward(target string, port int, event config.WebhookEvent) error {
+	url := fmt.Sprintf("http://%s:%d", target, port)
+	return ForwardToURL(url, event)
+}
+
+// ForwardToURL sends a webhook event as an HTTP POST request to the given URL.
+// It supports the multi-pipeline path where full URLs are provided.
+func ForwardToURL(targetURL string, event config.WebhookEvent) error {
 	// Serialize the event to pretty-printed JSON (matches Node.js behaviour)
 	data, err := json.MarshalIndent(event, "", "    ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
-	url := fmt.Sprintf("http://%s:%d", target, port)
-
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -40,7 +46,7 @@ func Forward(target string, port int, event config.WebhookEvent) error {
 	defer resp.Body.Close()
 
 	fmt.Printf("statusCode: %d\n", resp.StatusCode)
-	fmt.Println(display.Info(fmt.Sprintf("event forwarded to %s:%d", target, port)))
+	fmt.Println(display.Info(fmt.Sprintf("event forwarded to %s", targetURL)))
 	fmt.Println(display.Info(string(data)))
 
 	return nil
