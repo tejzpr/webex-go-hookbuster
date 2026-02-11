@@ -194,57 +194,75 @@ func startPipeline(p config.Pipeline) *listener.Listener {
 
 // ── Interactive step functions ──────────────────────────────────────────
 
-func gatherToken(specs *config.Specs) {
+// retryWithValidation executes a function that returns a value and error,
+// retrying on error until validation passes or the function succeeds.
+func retryWithValidation[T any](
+	getValue func() (T, error),
+	validate func(T) error,
+	onSuccess func(T),
+) {
 	for {
-		token, err := cli.RequestToken()
+		value, err := getValue()
 		if err != nil {
 			fmt.Println(display.Error(err.Error()))
 			continue
 		}
 
-		person, err := listener.VerifyAccessToken(token)
-		if err != nil {
-			fmt.Println(display.Error(err.Error()))
-			continue
+		if validate != nil {
+			if err := validate(value); err != nil {
+				fmt.Println(display.Error(err.Error()))
+				continue
+			}
 		}
 
-		fmt.Println(display.Info(fmt.Sprintf("token authenticated as %s", person.DisplayName)))
-		specs.AccessToken = token
+		if onSuccess != nil {
+			onSuccess(value)
+		}
 		return
 	}
+}
+
+func gatherToken(specs *config.Specs) {
+	retryWithValidation(
+		func() (string, error) { return cli.RequestToken() },
+		func(token string) error {
+			person, err := listener.VerifyAccessToken(token)
+			if err != nil {
+				return err
+			}
+			fmt.Println(display.Info(fmt.Sprintf("token authenticated as %s", person.DisplayName)))
+			specs.AccessToken = token
+			return nil
+		},
+		nil,
+	)
 }
 
 func gatherTarget(specs *config.Specs) {
-	for {
-		target, err := cli.RequestTarget()
-		if err != nil {
-			fmt.Println(display.Error(err.Error()))
-			continue
-		}
-
-		if len(target) == 0 {
-			fmt.Println(display.Error(`not a valid target. target must be "localhost", a valid IP address, or hostname`))
-			continue
-		}
-
-		fmt.Println(display.Answer(target))
-		specs.Target = target
-		return
-	}
+	retryWithValidation(
+		func() (string, error) { return cli.RequestTarget() },
+		func(target string) error {
+			if len(target) == 0 {
+				return fmt.Errorf(`not a valid target. target must be "localhost", a valid IP address, or hostname`)
+			}
+			fmt.Println(display.Answer(target))
+			specs.Target = target
+			return nil
+		},
+		nil,
+	)
 }
 
 func gatherPort(specs *config.Specs) {
-	for {
-		port, err := cli.RequestPort()
-		if err != nil {
-			fmt.Println(display.Error(err.Error()))
-			continue
-		}
-
-		fmt.Println(display.Answer(fmt.Sprintf("%d", port)))
-		specs.Port = port
-		return
-	}
+	retryWithValidation(
+		func() (int, error) { return cli.RequestPort() },
+		func(port int) error {
+			fmt.Println(display.Answer(fmt.Sprintf("%d", port)))
+			specs.Port = port
+			return nil
+		},
+		nil,
+	)
 }
 
 func gatherResourceAndStart(specs *config.Specs) *listener.Listener {
