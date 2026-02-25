@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	webex "github.com/tejzpr/webex-go-sdk/v2"
-	"github.com/tejzpr/webex-go-sdk/v2/conversation"
-	"github.com/tejzpr/webex-go-sdk/v2/people"
+	webex "github.com/WebexCommunity/webex-go-sdk/v2"
+	"github.com/WebexCommunity/webex-go-sdk/v2/conversation"
+	"github.com/WebexCommunity/webex-go-sdk/v2/people"
 
 	"github.com/tejzpr/webex-go-hookbuster/internal/config"
 	"github.com/tejzpr/webex-go-hookbuster/internal/display"

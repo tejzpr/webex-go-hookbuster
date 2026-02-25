@@ -6,7 +6,7 @@
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Docker](https://img.shields.io/docker/v/tejzpr/webex-go-hookbuster?label=Docker&sort=semver)](https://hub.docker.com/r/tejzpr/webex-go-hookbuster)
 
-A WebSocket-to-HTTP event bridge for Webex, written in Go using the [webex-go-sdk](https://github.com/tejzpr/webex-go-sdk).
+A WebSocket-to-HTTP event bridge for Webex, written in Go using the [webex-go-sdk](https://github.com/WebexCommunity/webex-go-sdk).
 
 Hookbuster connects to the Webex Mercury WebSocket service and forwards real-time events as HTTP POST requests to a local target application — eliminating the need for public webhook URLs during development.
 

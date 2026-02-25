@@ -3,7 +3,7 @@ package listener
 import (
 	"testing"
 
-	"github.com/tejzpr/webex-go-sdk/v2/conversation"
+	"github.com/WebexCommunity/webex-go-sdk/v2/conversation"
 )
 
 func TestBuildEventData_BasicFields(t *testing.T) {
