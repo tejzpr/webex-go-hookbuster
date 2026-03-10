@@ -17,6 +17,7 @@ Hookbuster connects to the Webex Mercury WebSocket service and forwards real-tim
 - **Interactive CLI** for guided setup
 - **Environment variable mode** for automated / container deployments
 - **Multi-pipeline mode** via YAML config file — multiple tokens and/or fan-out to multiple webhooks
+- **Forwarding modes**: `fanout` (send to all targets) and `roundrobin` (load-balanced with health checks and retry)
 - **Firehose mode** subscribes to all resources and all events
 - **Graceful shutdown** on SIGINT / SIGTERM
 - **End-to-end decryption** of message content via the SDK's KMS integration
@@ -78,6 +79,7 @@ Create a `hookbuster.yml` config file (see `hookbuster.yml.example`):
 pipelines:
   - name: "bot-account"
     token_env: "WEBEX_TOKEN_BOT"       # env var name (token never in file)
+    mode: "fanout"                     # optional — fanout is the default
     resources: ["messages", "rooms"]
     events: "all"
     targets:
@@ -90,6 +92,16 @@ pipelines:
     targets:                            # fan-out to multiple targets
       - url: "http://localhost:3000"
       - url: "http://localhost:4000"
+
+  - name: "load-balanced"
+    token_env: "WEBEX_TOKEN_LB"
+    mode: "roundrobin"                 # round-robin load balancer
+    resources: ["messages"]
+    events: "all"
+    targets:
+      - url: "http://localhost:5001"
+      - url: "http://localhost:5002"
+      - url: "http://localhost:5003"
 ```
 
 Then run with the `-c` flag or `HOOKBUSTER_CONFIG` environment variable:
@@ -105,17 +117,19 @@ HOOKBUSTER_CONFIG=hookbuster.yml ./hookbuster
 **Key features:**
 
 - **Multi-token**: Each pipeline connects with its own Webex token
-- **Fan-out**: A single pipeline can forward events to multiple webhook targets simultaneously
+- **Round-robin** (`mode: roundrobin`): Distribute events across targets with automatic retry, health checks (mark unhealthy after 3 consecutive failures), and background recovery (probe every 10 s) **(default)**
+- **Fan-out** (`mode: fanout`): Send every event to all targets simultaneously
 - **Security**: Tokens are referenced by env var name — never stored in the config file
 - **Firehose shorthand**: Omit `resources` to subscribe to all resources
 
-| Config Field | Required | Default | Description                            |
-| ------------ | -------- | ------- | -------------------------------------- |
-| `name`       | No       | —       | Pipeline name (used in log output)     |
-| `token_env`  | Yes      | —       | Env var name holding the Webex token   |
-| `resources`  | No       | all     | Resources to subscribe to              |
-| `events`     | No       | `all`   | Event filter (`all` or specific event) |
-| `targets`    | Yes      | —       | One or more target URLs                |
+| Config Field | Required | Default   | Description                                         |
+| ------------ | -------- | --------- | --------------------------------------------------- |
+| `name`       | No       | —         | Pipeline name (used in log output)                  |
+| `token_env`  | Yes      | —         | Env var name holding the Webex token                |
+| `mode`       | No       | `roundrobin` | Forwarding mode: `fanout` or `roundrobin`        |
+| `resources`  | No       | all       | Resources to subscribe to                           |
+| `events`     | No       | `all`     | Event filter (`all` or specific event)              |
+| `targets`    | Yes      | —         | One or more target URLs                             |
 
 ### Docker
 
@@ -148,19 +162,28 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph bot["Pipeline: bot ($BOT_TOKEN)"]
+    subgraph bot["Pipeline: bot — fanout ($BOT_TOKEN)"]
         B1["Conversation Client"] --> B2["Listener"]
         B2 --> B3["localhost:8080"]
     end
 
-    subgraph main["Pipeline: main ($MAIN_TOKEN)"]
+    subgraph main["Pipeline: main — fanout ($MAIN_TOKEN)"]
         M1["Conversation Client"] --> M2["Listener"]
         M2 --> M3["localhost:3000"]
         M2 --> M4["localhost:4000"]
     end
 
+    subgraph lb["Pipeline: lb — roundrobin ($LB_TOKEN)"]
+        L1["Conversation Client"] --> L2["Listener"]
+        L2 --> L3["Balancer\n(round-robin + health checks)"]
+        L3 --> L4["localhost:5001"]
+        L3 --> L5["localhost:5002"]
+        L3 --> L6["localhost:5003"]
+    end
+
     style bot fill:#e8f4f8,stroke:#4a90d9
     style main fill:#f0f8e8,stroke:#5ba55b
+    style lb fill:#fff3e0,stroke:#e8a838
     style B1 fill:#5ba55b,color:#fff
     style B2 fill:#e8a838,color:#fff
     style B3 fill:#7b68ee,color:#fff
@@ -168,6 +191,12 @@ flowchart TD
     style M2 fill:#e8a838,color:#fff
     style M3 fill:#7b68ee,color:#fff
     style M4 fill:#7b68ee,color:#fff
+    style L1 fill:#5ba55b,color:#fff
+    style L2 fill:#e8a838,color:#fff
+    style L3 fill:#d94a4a,color:#fff
+    style L4 fill:#7b68ee,color:#fff
+    style L5 fill:#7b68ee,color:#fff
+    style L6 fill:#7b68ee,color:#fff
 ```
 
 ## License

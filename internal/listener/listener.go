@@ -51,6 +51,13 @@ type Listener struct {
 	// targets holds multiple forwarding destinations for multi-pipeline mode.
 	// When empty, the legacy Forward(target, port) path is used.
 	targets []config.Target
+
+	// mode is the forwarding strategy: "fanout" (default) or "roundrobin".
+	mode string
+
+	// balancer is set when mode is "roundrobin". It handles round-robin
+	// forwarding with health checks and retry.
+	balancer *forwarder.Balancer
 }
 
 // NewListener creates a new Listener from the given specs (legacy single-pipeline mode).
@@ -68,19 +75,31 @@ func NewListener(specs *config.Specs) (*Listener, error) {
 }
 
 // NewPipelineListener creates a Listener for multi-pipeline mode with named
-// pipeline and multiple forwarding targets.
-func NewPipelineListener(name, accessToken string, targets []config.Target) (*Listener, error) {
+// pipeline, forwarding mode, and multiple forwarding targets.
+func NewPipelineListener(name, accessToken, mode string, targets []config.Target) (*Listener, error) {
 	client, err := webex.NewClient(accessToken, nil)
 	if err != nil {
 		return nil, fmt.Errorf(errCreateClient, err)
 	}
 
-	return &Listener{
+	// Default to roundrobin when mode is empty
+	if mode == "" {
+		mode = config.ModeRoundRobin
+	}
+
+	l := &Listener{
 		name:          name,
 		client:        client,
 		targets:       targets,
+		mode:          mode,
 		subscriptions: make(map[string]string),
-	}, nil
+	}
+
+	if mode == config.ModeRoundRobin {
+		l.balancer = forwarder.NewBalancer(name, targets)
+	}
+
+	return l, nil
 }
 
 // Start registers the given resource/event for forwarding, and connects
@@ -200,8 +219,15 @@ func (l *Listener) handleActivity(activity *conversation.Activity, verb, resourc
 	}
 
 	// Forward asynchronously so we don't block the Mercury read loop
-	if len(l.targets) > 0 {
-		// Multi-pipeline mode: fan-out to all targets
+	if l.balancer != nil {
+		// Round-robin mode: delegate to the balancer (retry + health checks)
+		go func() {
+			if err := l.balancer.Forward(webhookEvent); err != nil {
+				fmt.Println(display.Error(fmt.Sprintf("[%s] forward error: %s", l.name, err.Error())))
+			}
+		}()
+	} else if len(l.targets) > 0 {
+		// Fanout mode: send to all targets simultaneously
 		for _, t := range l.targets {
 			tgt := t
 			go func() {
@@ -286,6 +312,10 @@ func (l *Listener) Stop() error {
 		fmt.Println(display.Info(
 			fmt.Sprintf("%sstopping listener for %s:%s", prefix, resName, eventFilter),
 		))
+	}
+
+	if l.balancer != nil {
+		l.balancer.Stop()
 	}
 
 	if l.conversationClient != nil {

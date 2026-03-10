@@ -307,6 +307,82 @@ func TestLoadConfig_InvalidYAML(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_ModeFanout(t *testing.T) {
+	yaml := `
+pipelines:
+  - name: "fanout"
+    token_env: "WEBEX_TOKEN"
+    mode: "fanout"
+    resources: ["messages"]
+    targets:
+      - url: "http://localhost:8080"
+`
+	cfg, err := LoadConfig(writeTestConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("LoadConfig() returned error: %v", err)
+	}
+	if cfg.Pipelines[0].Mode != ModeFanout {
+		t.Errorf("mode = %q, want %q", cfg.Pipelines[0].Mode, ModeFanout)
+	}
+}
+
+func TestLoadConfig_ModeRoundRobin(t *testing.T) {
+	yaml := `
+pipelines:
+  - name: "lb"
+    token_env: "WEBEX_TOKEN"
+    mode: "roundrobin"
+    resources: ["messages"]
+    targets:
+      - url: "http://localhost:3000"
+      - url: "http://localhost:4000"
+`
+	cfg, err := LoadConfig(writeTestConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("LoadConfig() returned error: %v", err)
+	}
+	if cfg.Pipelines[0].Mode != ModeRoundRobin {
+		t.Errorf("mode = %q, want %q", cfg.Pipelines[0].Mode, ModeRoundRobin)
+	}
+}
+
+func TestLoadConfig_ModeDefaultEmpty(t *testing.T) {
+	yaml := `
+pipelines:
+  - name: "default"
+    token_env: "WEBEX_TOKEN"
+    resources: ["messages"]
+    targets:
+      - url: "http://localhost:8080"
+`
+	cfg, err := LoadConfig(writeTestConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("LoadConfig() returned error: %v", err)
+	}
+	if cfg.Pipelines[0].Mode != "" {
+		t.Errorf("mode = %q, want empty (defaults to fanout at runtime)", cfg.Pipelines[0].Mode)
+	}
+}
+
+func TestLoadConfig_InvalidMode(t *testing.T) {
+	yaml := `
+pipelines:
+  - name: "bad-mode"
+    token_env: "WEBEX_TOKEN"
+    mode: "random"
+    resources: ["messages"]
+    targets:
+      - url: "http://localhost:8080"
+`
+	_, err := LoadConfig(writeTestConfig(t, yaml))
+	if err == nil {
+		t.Fatal("expected error for invalid mode")
+	}
+	if !strings.Contains(err.Error(), "unknown mode") {
+		t.Errorf("error = %q, want it to contain 'unknown mode'", err.Error())
+	}
+}
+
 func TestLoadConfig_EmptyResources(t *testing.T) {
 	// Empty resources is valid -- will be treated as firehose (all resources)
 	yaml := `

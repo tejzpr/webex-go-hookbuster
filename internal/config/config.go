@@ -70,6 +70,18 @@ var Resources = map[string]*Resource{
 
 // ── Multi-pipeline configuration types ──────────────────────────────────
 
+// Pipeline forwarding modes.
+const (
+	ModeFanout     = "fanout"
+	ModeRoundRobin = "roundrobin"
+)
+
+// ValidModes lists all accepted values for the pipeline mode field.
+var ValidModes = map[string]bool{
+	ModeFanout:     true,
+	ModeRoundRobin: true,
+}
+
 // Target represents a single webhook forwarding destination.
 type Target struct {
 	URL string `yaml:"url" json:"url"`
@@ -79,6 +91,7 @@ type Target struct {
 type Pipeline struct {
 	Name      string   `yaml:"name"      json:"name"`
 	TokenEnv  string   `yaml:"token_env" json:"token_env"`
+	Mode      string   `yaml:"mode"      json:"mode"`
 	Resources []string `yaml:"resources" json:"resources"`
 	Events    string   `yaml:"events"    json:"events"`
 	Targets   []Target `yaml:"targets"   json:"targets"`
@@ -131,6 +144,9 @@ func validatePipeline(index int, p Pipeline) error {
 		if _, ok := Resources[r]; !ok {
 			return fmt.Errorf("pipeline %d (%q): unknown resource %q", index, p.Name, r)
 		}
+	}
+	if p.Mode != "" && !ValidModes[p.Mode] {
+		return fmt.Errorf("pipeline %d (%q): unknown mode %q (valid: %s, %s)", index, p.Name, p.Mode, ModeFanout, ModeRoundRobin)
 	}
 	return nil
 }

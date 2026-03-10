@@ -9,20 +9,20 @@
 # Set the env vars before running hookbuster:
 #   export WEBEX_TOKEN_BOT="your-bot-token-here"
 #   export WEBEX_TOKEN_MAIN="your-main-token-here"
+#   export WEBEX_TOKEN_LB="your-lb-token-here"
 
 pipelines:
-  # ── Multi-token example ───────────────────────────────────────────────
-  # Each pipeline connects with a different Webex token.
+  # ── Fan-out example ───────────────────────────────────────────────────
+  # Every event is sent to ALL targets simultaneously.
+  # mode: "fanout" must be set explicitly (default is "roundrobin").
 
   - name: "bot-account"
     token_env: "WEBEX_TOKEN_BOT"       # env var holding the Webex access token
+    mode: "fanout"                     # must be explicit — default is roundrobin
     resources: ["messages", "rooms"]    # subscribe to these resources
     events: "all"                       # "all" events for each resource
     targets:
       - url: "http://localhost:8080"    # forward events here
-
-  # ── Fan-out example ───────────────────────────────────────────────────
-  # A single token forwarding to multiple webhook targets simultaneously.
 
   - name: "main-account"
     token_env: "WEBEX_TOKEN_MAIN"
@@ -31,6 +31,25 @@ pipelines:
     targets:                            # fan-out to multiple targets
       - url: "http://localhost:3000"
       - url: "http://localhost:4000"
+
+  # ── Round-robin load balancer example (default mode) ──────────────────
+  # Events are distributed across targets in round-robin order.
+  # mode: "roundrobin" is the default and can be omitted.
+  # Features:
+  #   • Automatic retry to the next healthy target on failure
+  #   • Health checks: target marked unhealthy after 3 consecutive failures
+  #   • Background recovery: unhealthy targets are probed every 10s and
+  #     restored automatically when they respond
+
+  - name: "load-balanced"
+    token_env: "WEBEX_TOKEN_LB"
+    mode: "roundrobin"
+    resources: ["messages"]
+    events: "all"
+    targets:
+      - url: "http://localhost:5001"
+      - url: "http://localhost:5002"
+      - url: "http://localhost:5003"
 
   # ── Firehose shorthand ────────────────────────────────────────────────
   # Omit "resources" to subscribe to all resources (firehose mode).

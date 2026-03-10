@@ -160,12 +160,16 @@ func startPipeline(p config.Pipeline) *listener.Listener {
 	for i, t := range p.Targets {
 		targetURLs[i] = t.URL
 	}
+	mode := p.Mode
+	if mode == "" {
+		mode = config.ModeRoundRobin
+	}
 	fmt.Println(display.Info(
-		fmt.Sprintf("[%s] authenticated as %s → forwarding to %s",
-			p.Name, person.DisplayName, strings.Join(targetURLs, ", ")),
+		fmt.Sprintf("[%s] authenticated as %s → mode: %s → forwarding to %s",
+			p.Name, person.DisplayName, mode, strings.Join(targetURLs, ", ")),
 	))
 
-	l, err := listener.NewPipelineListener(p.Name, token, p.Targets)
+	l, err := listener.NewPipelineListener(p.Name, token, p.Mode, p.Targets)
 	if err != nil {
 		fmt.Println(display.Error(fmt.Sprintf(pipelineErrFmt, p.Name, err.Error())))
 		os.Exit(1)
