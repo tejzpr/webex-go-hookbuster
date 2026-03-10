@@ -35,7 +35,7 @@ Hookbuster connects to the Webex Mercury WebSocket service and forwards real-tim
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26+
 - A Webex access token (get one at https://developer.webex.com)
 
 ### Build
