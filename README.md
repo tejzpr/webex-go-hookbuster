@@ -79,7 +79,7 @@ Create a `hookbuster.yml` config file (see `hookbuster.yml.example`):
 pipelines:
   - name: "bot-account"
     token_env: "WEBEX_TOKEN_BOT"       # env var name (token never in file)
-    mode: "fanout"                     # optional — fanout is the default
+    mode: "fanout"                     # must be explicit — default is roundrobin
     resources: ["messages", "rooms"]
     events: "all"
     targets:
@@ -87,6 +87,7 @@ pipelines:
 
   - name: "main-account"
     token_env: "WEBEX_TOKEN_MAIN"
+    mode: "fanout"                     # must be explicit — default is roundrobin
     resources: ["messages", "rooms", "memberships", "attachmentActions"]
     events: "all"
     targets:                            # fan-out to multiple targets
@@ -95,7 +96,7 @@ pipelines:
 
   - name: "load-balanced"
     token_env: "WEBEX_TOKEN_LB"
-    mode: "roundrobin"                 # round-robin load balancer
+    mode: "roundrobin"                 # default — can be omitted
     resources: ["messages"]
     events: "all"
     targets:
